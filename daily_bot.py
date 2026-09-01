@@ -13,6 +13,7 @@ STATE_FILE = "state.json"
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
 CHAT_ID = os.getenv("WHATSAPP_CHAT_ID")
+API_HOST = "https://7107.api.greenapi.com"
 
 def download_pdf_if_missing():
     if not os.path.exists(PDF_PATH):
@@ -31,13 +32,12 @@ def save_current_page(page_num):
         json.dump({"current_page": page_num}, f, indent=2)
 
 def send_daily_page():
-    # 1. Ensure the PDF exists locally
     download_pdf_if_missing()
 
     page_num = get_current_page()
     print(f"Processing Page {page_num}...")
 
-    # 2. Convert specific page to image
+    # Convert specific page to image
     images = convert_from_path(
         PDF_PATH,
         first_page=page_num,
@@ -52,8 +52,8 @@ def send_daily_page():
     image_path = f"page_{page_num}.jpg"
     images[0].save(image_path, "JPEG")
 
-    # 3. Send to WhatsApp
-    url = f"https://api.green-api.com/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+    # Send file via WhatsApp API using your dedicated host
+    url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
     payload = {
         "chatId": CHAT_ID,
         "caption": f"📖 Daily Reading — Page {page_num}"
