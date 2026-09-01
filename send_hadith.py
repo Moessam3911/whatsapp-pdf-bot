@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 
 STATE_FILE = "state.json"
-TOTAL_CHAPTERS = 372  # Total chapters in Riyadh as-Salihin on Sunnah.com
+TOTAL_HADITHS = 1896
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -13,7 +13,7 @@ API_HOST = "https://7107.api.greenapi.com"
 
 def load_state():
     if not os.path.exists(STATE_FILE):
-        return {"quran_page": 1, "chapter_num": 3, "hadith_in_chapter": 1}
+        return {"quran_page": 1, "hadith_index": 25}
     with open(STATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -21,85 +21,61 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
-def fetch_chapter_hadiths(chapter_num):
-    url = f"https://sunnah.com/riyadussalihin/chapters/{chapter_num}"
+def fetch_hadith_from_sunnah(hadith_num):
+    url = f"https://sunnah.com/riyadussalihin:{hadith_num}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    response = requests.get(url, headers=headers, timeout=25)
+    response = requests.get(url, headers=headers, timeout=20)
     if response.status_code != 200:
-        raise RuntimeError(f"Could not load Chapter {chapter_num} from Sunnah.com. Status {response.status_code}")
+        raise RuntimeError(f"Could not load Hadith {hadith_num} from Sunnah.com. Status {response.status_code}")
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Extract Book and Chapter Titles
-    book_title_elem = soup.find("div", class_="book_page_number")
-    book_title = book_title_elem.get_text(strip=True) if book_title_elem else "رياض الصالحين"
+    # 1. Book title (e.g. كتاب المقدمات)
+    book_title = ""
+    book_elem = soup.find("div", class_="book_page_number")
+    if book_elem:
+        book_title = book_elem.get_text(strip=True)
 
+    # 2. Chapter title (e.g. (3) - باب الصبر)
+    chapter_title = ""
     chapter_elem = soup.find("div", class_="arabic_chapter")
-    chapter_title = chapter_elem.get_text(strip=True) if chapter_elem else f"باب رقم {chapter_num}"
+    if chapter_elem:
+        chapter_title = chapter_elem.get_text(strip=True)
 
-    # Extract all hadith containers on this chapter page
-    containers = soup.find_all("div", class_="actualHadithContainer")
-    hadiths = []
+    # 3. Arabic Hadith Text
+    text_elem = soup.find("div", class_="arabic_hadith_full") or soup.find("div", class_="arabic_hadith")
+    if not text_elem:
+        raise ValueError(f"Could not extract Arabic text for Hadith #{hadith_num}")
 
-    for c in containers:
-        text_elem = c.find("div", class_="arabic_hadith_full") or c.find("div", class_="arabic_hadith")
-        ref_elem = c.find("table", class_="hadith_reference")
-        
-        ref_text = ""
-        if ref_elem:
-            ref_text = ref_elem.get_text(separator=" ", strip=True)
+    hadith_text = text_elem.get_text(separator=" ", strip=True)
 
-        if text_elem:
-            hadiths.append({
-                "text": text_elem.get_text(separator=" ", strip=True),
-                "reference": ref_text
-            })
-
-    return book_title, chapter_title, hadiths
+    return book_title, chapter_title, hadith_text
 
 def send_hadith():
     state = load_state()
-    chapter_num = state.get("chapter_num", 3)
-    hadith_in_chapter = state.get("hadith_in_chapter", 1)
+    hadith_num = state.get("hadith_index", 25)
 
-    print(f"Fetching Chapter {chapter_num} from Sunnah.com...")
-    book_title, chapter_title, hadiths = fetch_chapter_hadiths(chapter_num)
+    if hadith_num > TOTAL_HADITHS:
+        hadith_num = 1
 
-    if not hadiths:
-        # If no hadiths found, move to next chapter
-        print(f"No hadiths found in Chapter {chapter_num}. Moving to next.")
-        state["chapter_num"] = chapter_num + 1
-        state["hadith_in_chapter"] = 1
-        save_state(state)
-        return
+    print(f"Fetching Hadith #{hadith_num} from Sunnah.com...")
+    book_title, chapter_title, hadith_text = fetch_hadith_from_sunnah(hadith_num)
 
-    # 1-based index to 0-based array index
-    idx = hadith_in_chapter - 1
+    # Format message with Book, Chapter, and Hadith details
+    message_lines = ["✨ *رياض الصالحين — من موقع Sunnah.com* ✨\n"]
+    if book_title:
+        message_lines.append(f"📖 *{book_title}*")
+    if chapter_title:
+        message_lines.append(f"🔹 *{chapter_title}*")
+    
+    message_lines.append(f"🔢 *رقم الحديث العام:* {hadith_num}\n")
+    message_lines.append(hadith_text)
+    message_lines.append(f"\n🔗 *الرابط:* https://sunnah.com/riyadussalihin:{hadith_num}")
 
-    if idx >= len(hadiths):
-        # Chapter finished, move to next chapter
-        chapter_num += 1
-        if chapter_num > TOTAL_CHAPTERS:
-            chapter_num = 1
-        print(f"Chapter completed. Transitioning to Chapter {chapter_num}...")
-        book_title, chapter_title, hadiths = fetch_chapter_hadiths(chapter_num)
-        idx = 0
-        hadith_in_chapter = 1
-
-    current_hadith = hadiths[idx]
-
-    # Format WhatsApp Message
-    message_text = (
-        f"✨ *رياض الصالحين — Sunnah.com* ✨\n\n"
-        f"📖 *{book_title}*\n"
-        f"🔹 *{chapter_title}*\n"
-        f"🔢 حديث رقم ({hadith_in_chapter} من {len(hadiths)} في هذا الباب)\n\n"
-        f"{current_hadith['text']}\n\n"
-        f"🔗 *المصدر:* https://sunnah.com/riyadussalihin/chapters/{chapter_num}"
-    )
+    message_text = "\n".join(message_lines)
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
     payload = {
@@ -110,16 +86,8 @@ def send_hadith():
     response = requests.post(url, json=payload)
 
     if response.status_code == 200:
-        print(f"Successfully sent Hadith {hadith_in_chapter}/{len(hadiths)} from Chapter {chapter_num}")
-        
-        # Advance index
-        if hadith_in_chapter >= len(hadiths):
-            state["chapter_num"] = chapter_num + 1
-            state["hadith_in_chapter"] = 1
-        else:
-            state["chapter_num"] = chapter_num
-            state["hadith_in_chapter"] = hadith_in_chapter + 1
-            
+        print(f"Successfully sent Hadith #{hadith_num}")
+        state["hadith_index"] = hadith_num + 1
         save_state(state)
     else:
         print(f"Failed to send: {response.text}")
