@@ -1,4 +1,0 @@
-gdown
-pdf2image
-Pillow
-requests
