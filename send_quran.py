@@ -15,13 +15,13 @@ API_HOST = "https://7107.api.greenapi.com"
 
 def load_state():
     if not os.path.exists(STATE_FILE):
-        return {"quran_page": 1, "hadith_index": 0}
+        return {"quran_page": 1, "hadith_index": 1, "next_task": "quran"}
     with open(STATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+        json.dump(state, f, indent=2, ensure_ascii=False)
 
 def send_quran_page():
     if not os.path.exists(PDF_PATH):
@@ -48,8 +48,7 @@ def send_quran_page():
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
     payload = {
-        "chatId": CHAT_ID,
-        "caption": f"📖 *ورد القرآن اليومي — صفحة {page_num}*"
+        "chatId": CHAT_ID
     }
 
     with open(image_path, "rb") as file:
