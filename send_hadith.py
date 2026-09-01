@@ -6,8 +6,8 @@ from bs4 import BeautifulSoup
 
 STATE_FILE = "state.json"
 TOTAL_HADITHS = 1896
-TEST_COUNT = 10  # Number of hadiths to send during this test run
-DELAY_SECONDS = 30  # Wait 30 seconds between messages
+TEST_COUNT = 10       # Number of hadiths to test in a single run
+DELAY_SECONDS = 30    # 30-second delay between tests
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -16,7 +16,7 @@ API_HOST = "https://7107.api.greenapi.com"
 
 def load_state():
     if not os.path.exists(STATE_FILE):
-        return {"quran_page": 1, "hadith_index": 25}
+        return {"quran_page": 1, "hadith_index": 1}
     with open(STATE_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -36,19 +36,19 @@ def fetch_hadith_from_sunnah(hadith_num):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # 1. Book title
+    # 1. Extract Arabic Book Name (e.g., كتاب الأدب)
     book_title = ""
-    book_elem = soup.find("div", class_="book_page_number")
+    book_elem = soup.find("div", class_="book_page_arabic_name") or soup.find("div", class_="arabic_book_name")
     if book_elem:
         book_title = book_elem.get_text(strip=True)
 
-    # 2. Chapter title
+    # 2. Extract Arabic Chapter / Bab Name (e.g., باب الحياء وفضله والتحريض عليه)
     chapter_title = ""
     chapter_elem = soup.find("div", class_="arabic_chapter")
     if chapter_elem:
         chapter_title = chapter_elem.get_text(strip=True)
 
-    # 3. Arabic Hadith Text
+    # 3. Extract Arabic Hadith Text
     text_elem = soup.find("div", class_="arabic_hadith_full") or soup.find("div", class_="arabic_hadith")
     if not text_elem:
         raise ValueError(f"Could not extract Arabic text for Hadith #{hadith_num}")
@@ -60,7 +60,7 @@ def fetch_hadith_from_sunnah(hadith_num):
 def run_test_loop():
     for step in range(TEST_COUNT):
         state = load_state()
-        hadith_num = state.get("hadith_index", 25)
+        hadith_num = state.get("hadith_index", 1)
 
         if hadith_num > TOTAL_HADITHS:
             hadith_num = 1
@@ -68,15 +68,16 @@ def run_test_loop():
         print(f"[{step + 1}/{TEST_COUNT}] Fetching Hadith #{hadith_num} from Sunnah.com...")
         book_title, chapter_title, hadith_text = fetch_hadith_from_sunnah(hadith_num)
 
-        message_lines = ["✨ *رياض الصالحين — من موقع Sunnah.com* ✨\n"]
+        # Build clean message structure
+        message_lines = []
+        
         if book_title:
             message_lines.append(f"📖 *{book_title}*")
         if chapter_title:
             message_lines.append(f"🔹 *{chapter_title}*")
         
-        message_lines.append(f"🔢 *رقم الحديث العام:* {hadith_num}\n")
+        message_lines.append(f"🔢 *الحديث رقم:* {hadith_num}\n")
         message_lines.append(hadith_text)
-        message_lines.append(f"\n🔗 *الرابط:* https://sunnah.com/riyadussalihin:{hadith_num}")
 
         message_text = "\n".join(message_lines)
 
@@ -96,7 +97,6 @@ def run_test_loop():
             print(f"Failed to send: {response.text}")
             raise RuntimeError(f"API Error {response.status_code}")
 
-        # Wait 30 seconds before sending the next one (except after the last one)
         if step < TEST_COUNT - 1:
             print(f"Waiting {DELAY_SECONDS} seconds before next hadith...")
             time.sleep(DELAY_SECONDS)
