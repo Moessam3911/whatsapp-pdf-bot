@@ -1,10 +1,10 @@
 import os
 import json
 import requests
+from bs4 import BeautifulSoup
 
-DATA_FILE = "hadiths_db.json"
 STATE_FILE = "state.json"
-DATA_URL = "https://raw.githubusercontent.com/fawazahmed0/hadith-api/1/editions/ara-riyadussalihin.json"
+TOTAL_HADITHS = 1896
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -21,48 +21,64 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
-def download_database_if_missing():
-    if not os.path.exists(DATA_FILE):
-        print("Downloading verified Riyadh as-Salihin database...")
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(DATA_URL, headers=headers, timeout=30)
-        if res.status_code == 200:
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                f.write(res.text)
-        else:
-            raise RuntimeError(f"Could not download hadith database. HTTP {res.status_code}")
+def fetch_from_sunnah(hadith_num):
+    url = f"https://sunnah.com/riyadussalihin:{hadith_num}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    
+    response = requests.get(url, headers=headers, timeout=20)
+    if response.status_code != 200:
+        raise RuntimeError(f"Could not reach Sunnah.com. Status code: {response.status_code}")
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # 1. Extract Book Title (e.g. كتاب الأدب)
+    book_title = ""
+    book_elem = soup.find("div", class_="book_page_number")
+    if book_elem:
+        book_title = book_elem.get_text(strip=True)
+
+    # 2. Extract Chapter/Bab Title (e.g. باب تحريم الظلم)
+    chapter_title = ""
+    chapter_elem = soup.find("div", class_="arabic_chapter")
+    if chapter_elem:
+        chapter_title = chapter_elem.get_text(strip=True)
+
+    # 3. Extract Arabic Hadith Text
+    hadith_elem = soup.find("div", class_="arabic_hadith_full")
+    if not hadith_elem:
+        hadith_elem = soup.find("div", class_="arabic_hadith")
+
+    if not hadith_elem:
+        raise ValueError(f"Could not locate Arabic hadith text on Sunnah.com for Hadith #{hadith_num}")
+
+    hadith_text = hadith_elem.get_text(separator=" ", strip=True)
+
+    return book_title, chapter_title, hadith_text
 
 def send_hadith():
-    download_database_if_missing()
-
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    hadith_list = data.get("hadiths", [])
-    total_hadiths = len(hadith_list)
-
-    if total_hadiths == 0:
-        raise ValueError("Hadith database is empty.")
-
     state = load_state()
     hadith_num = state.get("hadith_index", 1)
 
-    # If reached the end, reset back to Hadith 1
-    if hadith_num > total_hadiths:
+    if hadith_num > TOTAL_HADITHS:
         hadith_num = 1
 
-    # In arrays, index is number - 1
-    item = hadith_list[hadith_num - 1]
-    hadith_text = item.get("text", "").strip()
+    print(f"Fetching Hadith #{hadith_num} from Sunnah.com...")
+    book_title, chapter_title, hadith_text = fetch_from_sunnah(hadith_num)
 
-    print(f"Sending Hadith #{hadith_num} of {total_hadiths}...")
+    # Build structured WhatsApp message
+    message_lines = ["✨ *رياض الصالحين — من موقع Sunnah.com* ✨\n"]
+    if book_title:
+        message_lines.append(f"📖 *{book_title}*")
+    if chapter_title:
+        message_lines.append(f"🔹 *{chapter_title}*")
+    
+    message_lines.append(f"🔢 *الحديث رقم:* {hadith_num}\n")
+    message_lines.append(hadith_text)
+    message_lines.append(f"\n🔗 *رابط الحديث:* https://sunnah.com/riyadussalihin:{hadith_num}")
 
-    message_text = (
-        f"✨ *حديث اليوم من رياض الصالحين* ✨\n\n"
-        f"🔢 *الحديث رقم:* {hadith_num}\n\n"
-        f"{hadith_text}\n\n"
-        f"📚 *المصدر:* كتاب رياض الصالحين للإمام النووي"
-    )
+    message_text = "\n".join(message_lines)
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
     payload = {
