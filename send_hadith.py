@@ -2,15 +2,14 @@ import os
 import json
 import requests
 
+DATA_FILE = "hadiths_db.json"
 STATE_FILE = "state.json"
+DATA_URL = "https://raw.githubusercontent.com/fawazahmed0/hadith-api/1/editions/ara-riyadussalihin.json"
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
 CHAT_ID = os.getenv("WHATSAPP_CHAT_ID")
 API_HOST = "https://7107.api.greenapi.com"
-
-# Riyadh as-Salihin has 1896 total hadiths
-TOTAL_HADITHS = 1896
 
 def load_state():
     if not os.path.exists(STATE_FILE):
@@ -22,33 +21,47 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
-def fetch_hadith(hadith_num):
-    # Verified open digital edition of Riyadh as-Salihin
-    url = f"https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1/editions/ara-riyadussalihin/{hadith_num}.json"
-    res = requests.get(url, timeout=15)
-    if res.status_code == 200:
-        data = res.json()
-        return data["hadiths"][0]["text"]
-    return None
+def download_database_if_missing():
+    if not os.path.exists(DATA_FILE):
+        print("Downloading verified Riyadh as-Salihin database...")
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(DATA_URL, headers=headers, timeout=30)
+        if res.status_code == 200:
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                f.write(res.text)
+        else:
+            raise RuntimeError(f"Could not download hadith database. HTTP {res.status_code}")
 
 def send_hadith():
+    download_database_if_missing()
+
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    hadith_list = data.get("hadiths", [])
+    total_hadiths = len(hadith_list)
+
+    if total_hadiths == 0:
+        raise ValueError("Hadith database is empty.")
+
     state = load_state()
     hadith_num = state.get("hadith_index", 1)
 
-    if hadith_num > TOTAL_HADITHS:
+    # If reached the end, reset back to Hadith 1
+    if hadith_num > total_hadiths:
         hadith_num = 1
 
-    print(f"Fetching Hadith #{hadith_num}...")
-    hadith_text = fetch_hadith(hadith_num)
+    # In arrays, index is number - 1
+    item = hadith_list[hadith_num - 1]
+    hadith_text = item.get("text", "").strip()
 
-    if not hadith_text:
-        raise RuntimeError(f"Failed to fetch Hadith #{hadith_num}")
+    print(f"Sending Hadith #{hadith_num} of {total_hadiths}...")
 
     message_text = (
         f"✨ *حديث اليوم من رياض الصالحين* ✨\n\n"
         f"🔢 *الحديث رقم:* {hadith_num}\n\n"
-        f"{hadith_text.strip()}\n\n"
-        f"📚 *المصدر:* رياض الصالحين للإمام النووي"
+        f"{hadith_text}\n\n"
+        f"📚 *المصدر:* كتاب رياض الصالحين للإمام النووي"
     )
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
