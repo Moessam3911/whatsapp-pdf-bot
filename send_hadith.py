@@ -1,13 +1,11 @@
 import os
 import json
-import time
 import requests
 from bs4 import BeautifulSoup
 
 STATE_FILE = "state.json"
 TOTAL_HADITHS = 1896
-TEST_COUNT = 10       # Number of hadiths to test in a single run
-DELAY_SECONDS = 30    # 30-second delay between tests
+MAX_WORDS = 160
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -24,7 +22,7 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
-def fetch_hadith_from_sunnah(hadith_num):
+def fetch_hadith_text_from_sunnah(hadith_num):
     url = f"https://sunnah.com/riyadussalihin:{hadith_num}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -36,70 +34,50 @@ def fetch_hadith_from_sunnah(hadith_num):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # 1. Extract Arabic Book Name (e.g., كتاب الأدب)
-    book_title = ""
-    book_elem = soup.find("div", class_="book_page_arabic_name") or soup.find("div", class_="arabic_book_name")
-    if book_elem:
-        book_title = book_elem.get_text(strip=True)
-
-    # 2. Extract Arabic Chapter / Bab Name (e.g., باب الحياء وفضله والتحريض عليه)
-    chapter_title = ""
-    chapter_elem = soup.find("div", class_="arabic_chapter")
-    if chapter_elem:
-        chapter_title = chapter_elem.get_text(strip=True)
-
-    # 3. Extract Arabic Hadith Text
+    # Extract pure Arabic Hadith Text
     text_elem = soup.find("div", class_="arabic_hadith_full") or soup.find("div", class_="arabic_hadith")
     if not text_elem:
         raise ValueError(f"Could not extract Arabic text for Hadith #{hadith_num}")
 
-    hadith_text = text_elem.get_text(separator=" ", strip=True)
+    return text_elem.get_text(separator=" ", strip=True)
 
-    return book_title, chapter_title, hadith_text
+def send_hadith():
+    state = load_state()
+    hadith_num = state.get("hadith_index", 1)
 
-def run_test_loop():
-    for step in range(TEST_COUNT):
-        state = load_state()
-        hadith_num = state.get("hadith_index", 1)
-
+    while True:
         if hadith_num > TOTAL_HADITHS:
             hadith_num = 1
 
-        print(f"[{step + 1}/{TEST_COUNT}] Fetching Hadith #{hadith_num} from Sunnah.com...")
-        book_title, chapter_title, hadith_text = fetch_hadith_from_sunnah(hadith_num)
-
-        # Build clean message structure
-        message_lines = []
+        print(f"Checking Hadith #{hadith_num} from Sunnah.com...")
+        hadith_text = fetch_hadith_text_from_sunnah(hadith_num)
         
-        if book_title:
-            message_lines.append(f"📖 *{book_title}*")
-        if chapter_title:
-            message_lines.append(f"🔹 *{chapter_title}*")
-        
-        message_lines.append(f"🔢 *الحديث رقم:* {hadith_num}\n")
-        message_lines.append(hadith_text)
+        word_count = len(hadith_text.split())
+        print(f"Hadith #{hadith_num} word count: {word_count} words.")
 
-        message_text = "\n".join(message_lines)
-
-        url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
-        payload = {
-            "chatId": CHAT_ID,
-            "message": message_text
-        }
-
-        response = requests.post(url, json=payload)
-
-        if response.status_code == 200:
-            print(f"Successfully sent Hadith #{hadith_num}")
-            state["hadith_index"] = hadith_num + 1
-            save_state(state)
+        if word_count <= MAX_WORDS:
+            # Hadith is within the limit, proceed to send
+            break
         else:
-            print(f"Failed to send: {response.text}")
-            raise RuntimeError(f"API Error {response.status_code}")
+            print(f"Hadith #{hadith_num} exceeded {MAX_WORDS} words ({word_count} words). Skipping to next...")
+            hadith_num += 1
 
-        if step < TEST_COUNT - 1:
-            print(f"Waiting {DELAY_SECONDS} seconds before next hadith...")
-            time.sleep(DELAY_SECONDS)
+    # Send the chosen hadith
+    url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+    payload = {
+        "chatId": CHAT_ID,
+        "message": hadith_text
+    }
+
+    response = requests.post(url, json=payload)
+
+    if response.status_code == 200:
+        print(f"Successfully sent Hadith #{hadith_num} ({word_count} words)")
+        state["hadith_index"] = hadith_num + 1
+        save_state(state)
+    else:
+        print(f"Failed to send: {response.text}")
+        raise RuntimeError(f"API Error {response.status_code}")
 
 if __name__ == "__main__":
-    run_test_loop()
+    send_hadith()
