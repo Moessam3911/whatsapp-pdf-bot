@@ -1,10 +1,13 @@
 import os
 import json
+import time
 import requests
 from bs4 import BeautifulSoup
 
 STATE_FILE = "state.json"
 TOTAL_HADITHS = 1896
+TEST_COUNT = 10  # Number of hadiths to send during this test run
+DELAY_SECONDS = 30  # Wait 30 seconds between messages
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -33,13 +36,13 @@ def fetch_hadith_from_sunnah(hadith_num):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # 1. Book title (e.g. كتاب المقدمات)
+    # 1. Book title
     book_title = ""
     book_elem = soup.find("div", class_="book_page_number")
     if book_elem:
         book_title = book_elem.get_text(strip=True)
 
-    # 2. Chapter title (e.g. (3) - باب الصبر)
+    # 2. Chapter title
     chapter_title = ""
     chapter_elem = soup.find("div", class_="arabic_chapter")
     if chapter_elem:
@@ -54,44 +57,49 @@ def fetch_hadith_from_sunnah(hadith_num):
 
     return book_title, chapter_title, hadith_text
 
-def send_hadith():
-    state = load_state()
-    hadith_num = state.get("hadith_index", 25)
+def run_test_loop():
+    for step in range(TEST_COUNT):
+        state = load_state()
+        hadith_num = state.get("hadith_index", 25)
 
-    if hadith_num > TOTAL_HADITHS:
-        hadith_num = 1
+        if hadith_num > TOTAL_HADITHS:
+            hadith_num = 1
 
-    print(f"Fetching Hadith #{hadith_num} from Sunnah.com...")
-    book_title, chapter_title, hadith_text = fetch_hadith_from_sunnah(hadith_num)
+        print(f"[{step + 1}/{TEST_COUNT}] Fetching Hadith #{hadith_num} from Sunnah.com...")
+        book_title, chapter_title, hadith_text = fetch_hadith_from_sunnah(hadith_num)
 
-    # Format message with Book, Chapter, and Hadith details
-    message_lines = ["✨ *رياض الصالحين — من موقع Sunnah.com* ✨\n"]
-    if book_title:
-        message_lines.append(f"📖 *{book_title}*")
-    if chapter_title:
-        message_lines.append(f"🔹 *{chapter_title}*")
-    
-    message_lines.append(f"🔢 *رقم الحديث العام:* {hadith_num}\n")
-    message_lines.append(hadith_text)
-    message_lines.append(f"\n🔗 *الرابط:* https://sunnah.com/riyadussalihin:{hadith_num}")
+        message_lines = ["✨ *رياض الصالحين — من موقع Sunnah.com* ✨\n"]
+        if book_title:
+            message_lines.append(f"📖 *{book_title}*")
+        if chapter_title:
+            message_lines.append(f"🔹 *{chapter_title}*")
+        
+        message_lines.append(f"🔢 *رقم الحديث العام:* {hadith_num}\n")
+        message_lines.append(hadith_text)
+        message_lines.append(f"\n🔗 *الرابط:* https://sunnah.com/riyadussalihin:{hadith_num}")
 
-    message_text = "\n".join(message_lines)
+        message_text = "\n".join(message_lines)
 
-    url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
-    payload = {
-        "chatId": CHAT_ID,
-        "message": message_text
-    }
+        url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
+        payload = {
+            "chatId": CHAT_ID,
+            "message": message_text
+        }
 
-    response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload)
 
-    if response.status_code == 200:
-        print(f"Successfully sent Hadith #{hadith_num}")
-        state["hadith_index"] = hadith_num + 1
-        save_state(state)
-    else:
-        print(f"Failed to send: {response.text}")
-        raise RuntimeError(f"API Error {response.status_code}")
+        if response.status_code == 200:
+            print(f"Successfully sent Hadith #{hadith_num}")
+            state["hadith_index"] = hadith_num + 1
+            save_state(state)
+        else:
+            print(f"Failed to send: {response.text}")
+            raise RuntimeError(f"API Error {response.status_code}")
+
+        # Wait 30 seconds before sending the next one (except after the last one)
+        if step < TEST_COUNT - 1:
+            print(f"Waiting {DELAY_SECONDS} seconds before next hadith...")
+            time.sleep(DELAY_SECONDS)
 
 if __name__ == "__main__":
-    send_hadith()
+    run_test_loop()
