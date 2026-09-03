@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 STATE_FILE = "state.json"
 TOTAL_HADITHS = 1896
-MAX_WORDS = 200
+MAX_WORDS = 150
 
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
@@ -51,18 +51,18 @@ def send_hadith():
         try:
             hadith_text = fetch_hadith_text_from_sunnah(hadith_num)
         except Exception as e:
-            print(f"Error fetching Hadith #{hadith_num}: {e}. Skipping to next...")
+            print(f"Error fetching Hadith #{hadith_num}: {e}. Skipping...")
             hadith_num += 1
             continue
         
         word_count = len(hadith_text.split())
-        print(f"Hadith #{hadith_num} has {word_count} words.")
+        print(f"Hadith #{hadith_num} length: {word_count} words.")
 
         if word_count <= MAX_WORDS:
-            print(f"Hadith #{hadith_num} accepted (<= {MAX_WORDS} words).")
+            print(f"Accepted Hadith #{hadith_num} ({word_count} words <= {MAX_WORDS}).")
             break
         else:
-            print(f"Hadith #{hadith_num} has {word_count} words (> {MAX_WORDS}). Skipping to next...")
+            print(f"Hadith #{hadith_num} exceeded {MAX_WORDS} words ({word_count} words). Skipping...")
             hadith_num += 1
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
@@ -74,7 +74,7 @@ def send_hadith():
     response = requests.post(url, json=payload)
 
     if response.status_code == 200:
-        print(f"Successfully sent Hadith #{hadith_num}")
+        print(f"Successfully sent Hadith #{hadith_num} ({word_count} words)")
         state["hadith_index"] = hadith_num + 1
         save_state(state)
     else:
