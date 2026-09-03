@@ -5,7 +5,7 @@ import send_quran
 import send_hadith
 
 STATE_FILE = "state.json"
-TEST_ITERATIONS = 8   # Will run 8 tasks total (alternating Quran -> Hadith -> Quran -> Hadith...)
+TEST_ITERATIONS = 6   # Sends 6 items total (Quran -> Hadith -> Quran -> Hadith -> Quran -> Hadith)
 DELAY_SECONDS = 30     # 30-second delay between tasks
 
 def get_state():
@@ -21,26 +21,26 @@ def run_test_cycle():
 
         print(f"\n==========================================")
         print(f"Step [{step + 1}/{TEST_ITERATIONS}] -> Next Task: {current_task.upper()}")
-        print(f"Current State: Quran Page {state.get('quran_page')}, Hadith Index {state.get('hadith_index')}")
+        print(f"State: Quran Page {state.get('quran_page')}, Hadith Index {state.get('hadith_index')}")
         print(f"==========================================")
 
         if current_task == "quran":
             send_quran.send_quran_page()
-            # Reload fresh state saved by send_quran and switch turn
+            # Flip next task to hadith only after successful send
             fresh_state = get_state()
             fresh_state["next_task"] = "hadith"
             with open(STATE_FILE, "w", encoding="utf-8") as f:
                 json.dump(fresh_state, f, indent=2, ensure_ascii=False)
         else:
             send_hadith.send_hadith()
-            # Reload fresh state saved by send_hadith and switch turn
+            # Flip next task to quran only after successful send
             fresh_state = get_state()
             fresh_state["next_task"] = "quran"
             with open(STATE_FILE, "w", encoding="utf-8") as f:
                 json.dump(fresh_state, f, indent=2, ensure_ascii=False)
 
         if step < TEST_ITERATIONS - 1:
-            print(f"--> Task finished. Waiting {DELAY_SECONDS} seconds before next task...")
+            print(f"--> Done. Waiting {DELAY_SECONDS} seconds before next item...")
             time.sleep(DELAY_SECONDS)
 
 if __name__ == "__main__":
