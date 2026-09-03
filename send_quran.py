@@ -23,14 +23,29 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
+def ensure_pdf():
+    if os.path.exists(PDF_PATH) and os.path.getsize(PDF_PATH) > 1000:
+        return
+
+    print("Downloading Quran PDF from Google Drive...")
+    url = f"https://drive.google.com/uc?id={FILE_ID}&export=download"
+    try:
+        gdown.download(id=FILE_ID, output=PDF_PATH, quiet=False, fuzzy=True)
+    except Exception as e:
+        print(f"gdown failed ({e}), attempting direct stream fallback...")
+        session = requests.Session()
+        res = session.get(url, stream=True)
+        with open(PDF_PATH, "wb") as f:
+            for chunk in res.iter_content(chunk_size=32768):
+                if chunk:
+                    f.write(chunk)
+
 def send_quran_page():
-    if not os.path.exists(PDF_PATH):
-        print("Downloading Quran PDF...")
-        gdown.download(f"https://drive.google.com/uc?id={FILE_ID}", PDF_PATH, quiet=False)
+    ensure_pdf()
 
     state = load_state()
     page_num = state.get("quran_page", 1)
-    print(f"Processing Quran Page {page_num}...")
+    print(f"Rendering Quran Page {page_num}...")
 
     images = convert_from_path(
         PDF_PATH,
@@ -65,8 +80,7 @@ def send_quran_page():
 
     if os.path.exists(image_path):
         os.remove(image_path)
-    if os.path.exists(PDF_PATH):
-        os.remove(PDF_PATH)
+    # Do NOT delete quran.pdf here so subsequent loop iterations don't re-download it
 
 if __name__ == "__main__":
     send_quran_page()
