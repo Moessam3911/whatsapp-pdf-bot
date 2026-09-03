@@ -20,24 +20,6 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
-def download_quran_page_image(page_num, destination):
-    # Formats page numbers: 1 -> "page001.png", 311 -> "page311.png"
-    page_str = f"page{page_num:03d}.png"
-    url = f"https://android.quran.com/data/width_1260/{page_str}"
-    
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers, timeout=20)
-    
-    if response.status_code != 200:
-        # Fallback CDN if primary mirror fails
-        fallback_url = f"https://raw.githubusercontent.com/thetruereligion/Quran-Images/master/pages/{page_num}.png"
-        response = requests.get(fallback_url, headers=headers, timeout=20)
-        if response.status_code != 200:
-            raise RuntimeError(f"Could not download page {page_num}. Status: {response.status_code}")
-
-    with open(destination, "wb") as f:
-        f.write(response.content)
-
 def send_quran_page():
     state = load_state()
     page_num = state.get("quran_page", 1)
@@ -45,18 +27,20 @@ def send_quran_page():
     if page_num > TOTAL_PAGES:
         page_num = 1
 
-    print(f"Fetching clean Quran Page {page_num}...")
-    image_path = f"quran_page_{page_num}.png"
-    download_quran_page_image(page_num, image_path)
+    page_file_name = f"page{page_num:03d}.png"
+    image_url = f"https://android.quran.com/data/width_1260/{page_file_name}"
 
-    url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendFileByUpload/{API_TOKEN_INSTANCE}"
+    print(f"Sending Quran Page {page_num} via direct URL...")
+
+    # Use Green API sendFileByUrl
+    url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendFileByUrl/{API_TOKEN_INSTANCE}"
     payload = {
-        "chatId": CHAT_ID
+        "chatId": CHAT_ID,
+        "urlFile": image_url,
+        "fileName": page_file_name
     }
 
-    with open(image_path, "rb") as file:
-        files = [('file', (image_path, file, 'image/png'))]
-        response = requests.post(url, data=payload, files=files)
+    response = requests.post(url, json=payload, timeout=30)
 
     if response.status_code == 200:
         print(f"Successfully sent Quran page {page_num}")
@@ -65,9 +49,6 @@ def send_quran_page():
     else:
         print(f"Failed to send: {response.text}")
         raise RuntimeError(f"API Error {response.status_code}")
-
-    if os.path.exists(image_path):
-        os.remove(image_path)
 
 if __name__ == "__main__":
     send_quran_page()
