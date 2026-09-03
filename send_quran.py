@@ -1,10 +1,9 @@
 import os
 import json
-import gdown
 import requests
 from pdf2image import convert_from_path
 
-FILE_ID = "1MBYwkKu7Y52_tOTZ_DVnyL_21YdB6-hc"
+PDF_URL = "https://ia800300.us.archive.org/29/items/Quran_Pdf_format/Quran.pdf"
 PDF_PATH = "quran.pdf"
 STATE_FILE = "state.json"
 
@@ -23,29 +22,28 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2, ensure_ascii=False)
 
-def ensure_pdf():
-    if os.path.exists(PDF_PATH) and os.path.getsize(PDF_PATH) > 1000:
-        return
+def download_quran_pdf():
+    # Only download if missing or corrupt (< 1 MB)
+    if not os.path.exists(PDF_PATH) or os.path.getsize(PDF_PATH) < 1_000_000:
+        print("Downloading Quran PDF from reliable mirror...")
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(PDF_URL, headers=headers, stream=True, timeout=60)
+        
+        if response.status_code != 200:
+            raise RuntimeError(f"Download failed with status {response.status_code}")
 
-    print("Downloading Quran PDF from Google Drive...")
-    url = f"https://drive.google.com/uc?id={FILE_ID}&export=download"
-    try:
-        gdown.download(id=FILE_ID, output=PDF_PATH, quiet=False, fuzzy=True)
-    except Exception as e:
-        print(f"gdown failed ({e}), attempting direct stream fallback...")
-        session = requests.Session()
-        res = session.get(url, stream=True)
         with open(PDF_PATH, "wb") as f:
-            for chunk in res.iter_content(chunk_size=32768):
+            for chunk in response.iter_content(chunk_size=65536):
                 if chunk:
                     f.write(chunk)
+        print("Quran PDF downloaded successfully.")
 
 def send_quran_page():
-    ensure_pdf()
+    download_quran_pdf()
 
     state = load_state()
     page_num = state.get("quran_page", 1)
-    print(f"Rendering Quran Page {page_num}...")
+    print(f"Processing Quran Page {page_num}...")
 
     images = convert_from_path(
         PDF_PATH,
@@ -55,7 +53,7 @@ def send_quran_page():
     )
 
     if not images:
-        print(f"End of Quran or page {page_num} invalid.")
+        print(f"Reached end of Quran or page {page_num} invalid.")
         return
 
     image_path = f"quran_page_{page_num}.jpg"
@@ -80,7 +78,6 @@ def send_quran_page():
 
     if os.path.exists(image_path):
         os.remove(image_path)
-    # Do NOT delete quran.pdf here so subsequent loop iterations don't re-download it
 
 if __name__ == "__main__":
     send_quran_page()
