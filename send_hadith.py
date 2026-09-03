@@ -47,16 +47,22 @@ def send_hadith():
         if hadith_num > TOTAL_HADITHS:
             hadith_num = 1
 
-        print(f"Checking Hadith #{hadith_num} from Sunnah.com...")
-        hadith_text = fetch_hadith_text_from_sunnah(hadith_num)
+        print(f"Checking Hadith #{hadith_num}...")
+        try:
+            hadith_text = fetch_hadith_text_from_sunnah(hadith_num)
+        except Exception as e:
+            print(f"Error fetching Hadith #{hadith_num}: {e}. Skipping to next...")
+            hadith_num += 1
+            continue
         
         word_count = len(hadith_text.split())
-        print(f"Hadith #{hadith_num} word count: {word_count} words.")
+        print(f"Hadith #{hadith_num} has {word_count} words.")
 
         if word_count <= MAX_WORDS:
+            print(f"Hadith #{hadith_num} accepted (<= {MAX_WORDS} words).")
             break
         else:
-            print(f"Hadith #{hadith_num} exceeded {MAX_WORDS} words ({word_count} words). Skipping...")
+            print(f"Hadith #{hadith_num} has {word_count} words (> {MAX_WORDS}). Skipping to next...")
             hadith_num += 1
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendMessage/{API_TOKEN_INSTANCE}"
@@ -68,7 +74,7 @@ def send_hadith():
     response = requests.post(url, json=payload)
 
     if response.status_code == 200:
-        print(f"Successfully sent Hadith #{hadith_num} ({word_count} words)")
+        print(f"Successfully sent Hadith #{hadith_num}")
         state["hadith_index"] = hadith_num + 1
         save_state(state)
     else:
