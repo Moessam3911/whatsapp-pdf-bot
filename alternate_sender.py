@@ -6,7 +6,7 @@ import send_hadith
 
 STATE_FILE = "state.json"
 TEST_DURATION_SECONDS = 2 * 60 * 60  # 2 Hours (7200 seconds)
-DELAY_SECONDS = 15                  # Interval between messages
+DELAY_SECONDS = 60*60*12                  # Interval between messages
 
 def get_state():
     if not os.path.exists(STATE_FILE):
