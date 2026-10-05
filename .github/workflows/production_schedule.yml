@@ -1,0 +1,71 @@
+name: Daily Quran & Hadith Dispatcher
+
+on:
+  schedule:
+    # 05:00 UTC = 8:00 AM Egypt (Summer UTC+3)
+    - cron: '0 5 * * *'
+    # 17:00 UTC = 8:00 PM Egypt (Summer UTC+3)
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Choose which task to trigger manually'
+        required: true
+        default: 'quran'
+        type: choice
+        options:
+          - quran
+          - hadith
+
+jobs:
+  dispatch-message:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Determine Task & Run
+        env:
+          GREEN_API_ID: ${{ secrets.GREEN_API_ID }}
+          GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
+          WHATSAPP_CHAT_ID: ${{ secrets.WHATSAPP_CHAT_ID }}
+        run: |
+          # If triggered manually, use the selected input
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TASK="${{ github.event.inputs.task }}"
+          else
+            # 05:00 UTC is morning (Quran), 17:00 UTC is evening (Hadith)
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -lt 12 ]; then
+              TASK="quran"
+            else
+              TASK="hadith"
+            fi
+          fi
+          
+          echo "Selected task: $TASK"
+          python alternate_sender.py "$TASK"
+
+      - name: Commit and push state update
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add state.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update state after $TASK [skip ci]" && git push)
