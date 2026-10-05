@@ -7,10 +7,15 @@ import send_hadith
 STATE_FILE = "state.json"
 
 def get_state():
+    default_state = {"quran_page": 1, "hadith_index": 1}
     if not os.path.exists(STATE_FILE):
-        return {"quran_page": 1, "hadith_index": 1}
-    with open(STATE_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return default_state
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not parse {STATE_FILE} ({e}). Falling back to defaults.")
+        return default_state
 
 def run():
     # Accept command line argument: python alternate_sender.py quran
