@@ -71,7 +71,7 @@ def send_hadith():
         "message": hadith_text
     }
 
-    response = requests.post(url, json=payload)
+    response = requests.post(url, json=payload, timeout=30)
 
     if response.status_code == 200:
         print(f"Successfully sent Hadith #{hadith_num} ({word_count} words)")
