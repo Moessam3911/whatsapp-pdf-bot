@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 
@@ -8,6 +9,18 @@ TOTAL_PAGES = 604
 ID_INSTANCE = os.getenv("GREEN_API_ID")
 API_TOKEN_INSTANCE = os.getenv("GREEN_API_TOKEN")
 CHAT_ID = os.getenv("WHATSAPP_CHAT_ID")
+
+
+def _clean_chat_id(raw):
+    """Remove spaces, line breaks and quotes that sneak in when pasting the secret."""
+    cid = (raw or "").strip().strip('"\'').strip().rstrip(",").strip().strip('"\'')
+    if not re.fullmatch(r"[0-9-]+@(g\.us|c\.us|lid)", cid):
+        hint = "empty" if not cid else (
+            "missing '@g.us' at the end" if "@" not in cid else "contains invalid characters")
+        raise SystemExit(
+            f"WHATSAPP_CHAT_ID secret has the wrong format ({hint}, length {len(cid)}). "
+            "It must look like 120363012345678901@g.us - no quotes, no spaces.")
+    return cid
 API_HOST = "https://7107.api.greenapi.com"
 
 def load_state():
@@ -35,7 +48,7 @@ def send_quran_page():
 
     url = f"{API_HOST}/waInstance{ID_INSTANCE}/sendFileByUrl/{API_TOKEN_INSTANCE}"
     payload = {
-        "chatId": CHAT_ID,
+        "chatId": _clean_chat_id(CHAT_ID),
         "urlFile": image_url,
         "fileName": file_name
     }
